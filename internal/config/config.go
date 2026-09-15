@@ -14,6 +14,7 @@ const (
 
 	EnvAPIKey  = "CODEFORGE_API_KEY"
 	EnvBaseURL = "CODEFORGE_BASE_URL"
+	EnvModel   = "CODEFORGE_MODEL"
 
 	userConfigRel    = ".codeforge/config.yaml"
 	projectConfigRel = ".codeforge.yaml"
@@ -61,6 +62,9 @@ func LoadFrom(home, startDir string) (*Config, error) {
 	}
 	if v := os.Getenv(EnvBaseURL); v != "" {
 		cfg.BaseURL = v
+	}
+	if v := os.Getenv(EnvModel); v != "" {
+		cfg.Model = v
 	}
 	return cfg, nil
 }

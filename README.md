@@ -1,8 +1,8 @@
 # CodeForge
 
-Enterprise coding Agent CLI — **test/quality engineering wedge** (not a general IDE or chat box).
+Enterprise coding Agent CLI — **test/quality engineering wedge**（企业测试/QE CLI 楔子，**不是**通用 IDE 或聊天框）。
 
-W1 delivers an installable CLI skeleton, a frozen provider/config/sample layout, and demo fixtures. Test generation, defect attribution, and regression suggestions are stubs until W2.
+M1 在 W1 骨架上把三条垂直命令做成真实路径（黄金路径 + 失败路径），并加上本地席位状态机。
 
 ## Build / Install
 
@@ -14,84 +14,125 @@ cd CodeForge
 go build -o codeforge ./cmd/codeforge
 ```
 
-Install into `GOBIN` / `PATH`:
-
 ```bash
 go install github.com/mxl1c/CodeForge/cmd/codeforge@latest
-```
-
-From a local checkout:
-
-```bash
+# or from a checkout:
 go install ./cmd/codeforge
 ```
 
-## Commands
+## Provider（OpenAI-compatible 网关，不绑死官方 OpenAI）
 
-Binary name: `codeforge`. The **five product commands** are W1 stubs: they print a clear status line and **exit 0**. They do **not** call the model.
+适配器走 Chat Completions：`POST {base_url}/chat/completions`。默认值仍是兼容占位；**请按网关配置** `base_url` / `model`。
 
-| Command | Purpose |
-|---|---|
-| `codeforge login` | Auth stub (no-op). Set `CODEFORGE_API_KEY` (optional `CODEFORGE_BASE_URL`). |
-| `codeforge init` | Project config stub (does not write files in W1). |
-| `codeforge test-gen` | Test generation stub. |
-| `codeforge defect-blame` | Defect attribution stub. |
-| `codeforge regress-suggest` | Regression-suggestion stub. |
+DeepSeek 示例：
 
 ```bash
-./codeforge --help
-./codeforge login
-./codeforge init
-./codeforge test-gen
-./codeforge defect-blame
-./codeforge regress-suggest
-```
-
-`test-gen` / `defect-blame` / `regress-suggest` construct the OpenAI-compatible provider. If no API key is configured they print a graceful error and still exit 0 (stub). They do not call the model in W1.
-
-## W1-05 API smoke (`provider ping`)
-
-`codeforge provider ping` is a **diagnostic** command (not a sixth product command). It performs **one** real OpenAI-compatible Chat Completions `Complete` call.
-
-```bash
-export CODEFORGE_API_KEY=sk-...          # or api_key in ~/.codeforge/config.yaml
-# optional: export CODEFORGE_BASE_URL=https://api.openai.com/v1
+export CODEFORGE_API_KEY=sk-...
+export CODEFORGE_BASE_URL=https://api.deepseek.com/v1
+export CODEFORGE_MODEL=deepseek-chat
 ./codeforge provider ping
 ```
 
-- Missing `CODEFORGE_API_KEY` and no config `api_key`: clear error, **non-zero exit**
-- With credentials: one HTTP `POST {base_url}/chat/completions`, prints model and token usage, **exit 0**
+其他兼容网关同样设置 `CODEFORGE_BASE_URL` + `CODEFORGE_MODEL`（或写入 `~/.codeforge/config.yaml`）。
+
+无密钥时，三条垂直命令走 **本地确定性分析**（CI 友好）。有密钥且未加 `--offline` 时，会额外调用一次 provider；模型编造的文件/函数会被丢弃。
+
+CI 夹具模式：
+
+```bash
+export CODEFORGE_OFFLINE=1
+# or
+./codeforge test-gen --offline --module samples/go-saas-admin
+```
+
+## Seat lifecycle（席位：trial → active → suspended）
+
+本地账本：`~/.codeforge/seat.json`（不是云计费）。**不新增第六条产品命令**，挂在 `login` 子命令上。
+
+```bash
+./codeforge login                 # 无席位则进入 trial，并打印状态
+./codeforge login status          # 只读
+./codeforge login trial           # (none) → trial
+./codeforge login activate        # trial → active
+./codeforge login suspend         # active → suspended
+```
+
+非法跳转（例如 trial→suspend、suspended→active）非 0 退出且不改账本。
+
+`suspended` 时 `test-gen` / `defect-blame` / `regress-suggest` 拒绝执行。首次跑垂直命令若还没有席位，会自动开 trial。
+
+## Commands
+
+Binary: `codeforge`. 产品命令仍是这五条（加深行为，不是聊天 IDE）：
+
+| Command | M1 |
+|---|---|
+| `login` | 席位账本 + 凭据提示 |
+| `init` | 打印配置路径（不写文件） |
+| `test-gen` | 扫描模块，产出有证据的测例 |
+| `defect-blame` | 堆栈归因 + 复现步骤 |
+| `regress-suggest` | P0/P1/P2 定向回归（禁止全量） |
+
+诊断（非产品命令）：`provider ping`。
+
+### test-gen
+
+```bash
+./codeforge test-gen --offline --module samples/go-saas-admin
+./codeforge test-gen --offline --module samples/java-saas-admin
+```
+
+- **黄金路径**：对样例订单域扫描 `Refund`/`Get`，给出关闭订单退款拒绝 + 租户隔离用例（CF-W1-001）。
+- **失败路径**：空模块（无生产源码）**非 0 退出**，不编造测例。
+
+### defect-blame
+
+```bash
+./codeforge defect-blame --offline --stack fixtures/failure-stack-zh.txt
+./codeforge defect-blame --offline --stack fixtures/insufficient-stack.txt
+```
+
+- **黄金路径**：定位 `OrderService.refund`，分类 `defect`，给出租户/订单复现步骤。
+- **失败路径**：无应用帧 / 空堆栈 → `insufficient`，**不编造**文件或责任人，非 0 退出。
+
+### regress-suggest
+
+```bash
+./codeforge regress-suggest --offline --diff fixtures/fake-pr.diff
+./codeforge regress-suggest --offline --diff fixtures/docs-only.diff
+```
+
+- **黄金路径**：P0 退款冒烟、P1 租户核心、可选 P2；输出含 “full regression forbidden”。
+- **失败路径**：空 diff 非 0 退出；**纯文档**不升级为 P0/P1。
 
 ## Config
 
-Merged in this order (later wins):
+合并顺序（后者覆盖前者）：
 
-1. Defaults (`base_url=https://api.openai.com/v1`, `model=gpt-4o-mini`)
+1. Defaults（`base_url=https://api.openai.com/v1`，`model=gpt-4o-mini` — 可被网关覆盖）
 2. `~/.codeforge/config.yaml`
-3. Project `.codeforge.yaml` (walks up from the current directory)
-4. Env: `CODEFORGE_API_KEY`, `CODEFORGE_BASE_URL`
-
-Example user config (`~/.codeforge/config.yaml`):
+3. 项目 `.codeforge.yaml`（从 cwd 向上查找）
+4. Env：`CODEFORGE_API_KEY`，`CODEFORGE_BASE_URL`，`CODEFORGE_MODEL`
 
 ```yaml
+# ~/.codeforge/config.yaml — DeepSeek 兼容网关示例
 api_key: sk-...
-base_url: https://api.openai.com/v1
-model: gpt-4o-mini
+base_url: https://api.deepseek.com/v1
+model: deepseek-chat
 ```
 
-Do not commit secrets. Project `.codeforge.yaml` should only hold non-secret defaults.
+不要把密钥提交进仓库。
 
 ## Samples and fixtures
 
-- `samples/java-saas-admin/` — Java SaaS mid-office stub (order admin) with a failing-test hook
-- `samples/go-saas-admin/` — Go SaaS mid-office stub with the same known defects
-- `fixtures/failure-stack-zh.txt` — Chinese business-context failure stack
-- `fixtures/fake-pr.diff` — fake PR that introduces the refund regression
-
-Known defect `CF-W1-001`: closed orders can be refunded; order lookup is not tenant-scoped.
+- `samples/java-saas-admin/` / `samples/go-saas-admin/` — SaaS 中后台订单骨架（已知缺陷 CF-W1-001）
+- `fixtures/failure-stack-zh.txt` — 中文业务失败堆栈
+- `fixtures/insufficient-stack.txt` — 证据不足（超时、无应用帧）
+- `fixtures/fake-pr.diff` — 假 PR：退款账本但漏状态/租户
+- `fixtures/docs-only.diff` — 纯文档变更（不得升级回归）
 
 ## Scope
 
-CodeForge is a **test/quality wedge**: test generation, defect blame, and regression suggestions for Java/Go SaaS mid-office services. It is **not** a general-purpose IDE, coding copilot, or chat interface.
+CodeForge **只做**测例生成 / 缺陷归因 / 回归建议。做成通用 IDE、编码 Copilot 或聊天框视为未达立项。无 IDE 插件。
 
-Frozen choices: [SELECTION.md](SELECTION.md).
+选型：[SELECTION.md](SELECTION.md)。

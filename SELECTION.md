@@ -70,3 +70,21 @@ W1-05：`codeforge provider ping` 在凭据存在时发起 **一次** 真实 Cha
 ## 计量字段（选型占位，W1 不实现）
 
 后续自建账本预留：租户、席位、命令名、provider、model、prompt/completion tokens、请求状态。W1 仅在 `CompletionResponse.Usage` 解析 tokens，不上报账本。
+
+---
+
+## M1 解冻（相对 W1 stub）
+
+M1 保持五条产品命令名，加深行为（仍不是通用 IDE / 聊天）：
+
+| 命令 | M1 行为 |
+|---|---|
+| `login` | 本地席位账本：`trial → active → suspended`（`login trial\|activate\|suspend\|status`） |
+| `init` | 打印配置/席位路径，不写入文件 |
+| `test-gen --module` | 扫描 Java/Go 生产源码生成测例；空模块失败且不编造 |
+| `defect-blame --stack` | 定位文件/函数，分类 defect/env/test；证据不足不编造责任 |
+| `regress-suggest --diff` | P0 冒烟 / P1 核心 / P2 外围；禁止全量回归；纯文档不升级 |
+
+有 `CODEFORGE_API_KEY` 时垂直命令可调用一次 provider；`--offline` 或 `CODEFORGE_OFFLINE=1` 为 CI 确定性夹具模式。
+
+Provider 文档优先 **OpenAI 兼容网关**（官方 OpenAI 只是其中一种）。DeepSeek 示例：`CODEFORGE_BASE_URL=https://api.deepseek.com/v1`，`CODEFORGE_MODEL=deepseek-chat`。

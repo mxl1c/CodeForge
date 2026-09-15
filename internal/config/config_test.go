@@ -9,6 +9,7 @@ import (
 func TestLoadFrom_DefaultsAndEnv(t *testing.T) {
 	t.Setenv(EnvAPIKey, "env-key")
 	t.Setenv(EnvBaseURL, "https://gateway.example/v1")
+	t.Setenv(EnvModel, "deepseek-chat")
 
 	home := t.TempDir()
 	start := t.TempDir()
@@ -23,7 +24,7 @@ func TestLoadFrom_DefaultsAndEnv(t *testing.T) {
 	if cfg.BaseURL != "https://gateway.example/v1" {
 		t.Fatalf("BaseURL=%q", cfg.BaseURL)
 	}
-	if cfg.Model != DefaultModel {
+	if cfg.Model != "deepseek-chat" {
 		t.Fatalf("Model=%q", cfg.Model)
 	}
 }
@@ -31,6 +32,7 @@ func TestLoadFrom_DefaultsAndEnv(t *testing.T) {
 func TestLoadFrom_UserThenProject(t *testing.T) {
 	t.Setenv(EnvAPIKey, "")
 	t.Setenv(EnvBaseURL, "")
+	t.Setenv(EnvModel, "")
 
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, ".codeforge"), 0o755); err != nil {
