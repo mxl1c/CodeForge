@@ -22,7 +22,7 @@ Golden: fixtures/fake-pr.diff
 Failure: empty diff exits non-zero; docs-only diffs stay P2 and do not escalate.`,
 		RunE: runRegressSuggest,
 	}
-	cmd.Flags().String("diff", defaultDiffPath, "path to unified diff (default fixtures/fake-pr.diff)")
+	cmd.Flags().String("diff", defaultDiffPath, "path to unified diff")
 	addOfflineFlag(cmd)
 	return cmd
 }
