@@ -23,6 +23,7 @@ CODEFORGE_BASE_URL / CODEFORGE_MODEL select an OpenAI-compatible gateway
 			cmd.Printf("export CODEFORGE_MODEL=deepseek-chat\n")
 			cmd.Printf("or: api_key / base_url / model in ~/.codeforge/config.yaml\n")
 			cmd.Printf("seat lifecycle: codeforge seat trial|activate|suspend|status\n")
+			cmd.Printf("seat tier (offline labels, not payment): codeforge seat tier [free|pro|business]\n")
 			return nil
 		},
 		Args: cobra.NoArgs,

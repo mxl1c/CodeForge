@@ -29,19 +29,21 @@ cases; symbols not present in the scan are dropped.`,
 	return cmd
 }
 
-func runTestGen(cmd *cobra.Command, _ []string) error {
-	if _, err := requireSeat("test-gen"); err != nil {
+func runTestGen(cmd *cobra.Command, _ []string) (err error) {
+	sess, p, err := prepareQE(cmd, "test-gen")
+	defer func() {
+		if uerr := flushUsage("test-gen", sess, err); uerr != nil && err == nil {
+			err = uerr
+		}
+	}()
+	if err != nil {
 		return err
 	}
 	repo, _ := cmd.Flags().GetString("repo")
 	offline := isOffline(cmd)
-	p, cfg, err := loadProvider(offline)
-	if err != nil {
-		return err
-	}
 	model := ""
-	if cfg != nil {
-		model = cfg.Model
+	if sess.cfg != nil {
+		model = sess.cfg.Model
 	}
 	res, err := testgen.Run(cmd.Context(), testgen.Input{
 		ModuleDir: repo,

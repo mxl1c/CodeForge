@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/mxl1c/CodeForge/internal/config"
 	"github.com/mxl1c/CodeForge/internal/provider"
 	"github.com/mxl1c/CodeForge/internal/seat"
+	"github.com/mxl1c/CodeForge/internal/usage"
 )
 
 func addOfflineFlag(cmd *cobra.Command) {
@@ -48,6 +50,14 @@ func seatStore() (*seat.Store, error) {
 	return seat.Open(home), nil
 }
 
+func usageStore() (*usage.Store, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	return usage.Open(home), nil
+}
+
 func requireSeat(via string) (*seat.Record, error) {
 	st, err := seatStore()
 	if err != nil {
@@ -57,6 +67,73 @@ func requireSeat(via string) (*seat.Record, error) {
 }
 
 func printSeat(cmd *cobra.Command, rec *seat.Record) {
-	fmt.Fprintf(cmd.OutOrStdout(), "seat: id=%s state=%s tenant=%s\n", rec.SeatID, rec.State, rec.Tenant)
+	tier := rec.EffectiveTier()
+	fmt.Fprintf(cmd.OutOrStdout(), "seat: id=%s state=%s tenant=%s tier=%s (%s)\n",
+		rec.SeatID, rec.State, rec.Tenant, tier, tier.Label())
+	fmt.Fprintf(cmd.OutOrStdout(), "seat tiers (offline labels, not payment): free=Free  pro=~¥140  business=~¥700–1400\n")
 	fmt.Fprintf(cmd.OutOrStdout(), "seat lifecycle: trial → active → suspended (local ledger ~/.codeforge/seat.json)\n")
+}
+
+type qeSession struct {
+	rec *seat.Record
+	cfg *config.Config
+	cap *usage.Capture
+}
+
+func prepareQE(cmd *cobra.Command, command string) (*qeSession, provider.Provider, error) {
+	sess := &qeSession{}
+	rec, err := requireSeat(command)
+	sess.rec = rec
+	if err != nil {
+		return sess, nil, err
+	}
+	offline := isOffline(cmd)
+	p, cfg, err := loadProvider(offline)
+	sess.cfg = cfg
+	if err != nil {
+		return sess, nil, err
+	}
+	sess.cap = usage.Wrap(p)
+	return sess, sess.cap.Provider(), nil
+}
+
+func flushUsage(command string, sess *qeSession, runErr error) error {
+	if sess == nil {
+		return nil
+	}
+	st, err := usageStore()
+	if err != nil {
+		return err
+	}
+	e := usage.Entry{
+		Command:  command,
+		Provider: usage.ProviderOffline,
+		Model:    usage.ModelOffline,
+		Status:   usageStatus(runErr),
+	}
+	if sess.rec != nil {
+		e.Tenant = sess.rec.Tenant
+		e.SeatID = sess.rec.SeatID
+		e.Tier = string(sess.rec.EffectiveTier())
+	}
+	if sess.cap != nil && sess.cap.Called {
+		e.Provider = usage.ProviderCompat
+		e.Model = sess.cap.Model
+		if e.Model == "" && sess.cfg != nil {
+			e.Model = sess.cfg.Model
+		}
+		e.PromptTokens = sess.cap.PromptTokens
+		e.CompletionTokens = sess.cap.CompletionTokens
+	}
+	return st.Append(e)
+}
+
+func usageStatus(err error) string {
+	if err == nil {
+		return usage.StatusOK
+	}
+	if errors.Is(err, seat.ErrSuspended) {
+		return usage.StatusBlocked
+	}
+	return usage.StatusError
 }

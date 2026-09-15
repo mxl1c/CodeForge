@@ -27,19 +27,21 @@ Failure: empty diff exits non-zero; docs-only diffs stay P2 and do not escalate.
 	return cmd
 }
 
-func runRegressSuggest(cmd *cobra.Command, _ []string) error {
-	if _, err := requireSeat("regress-suggest"); err != nil {
+func runRegressSuggest(cmd *cobra.Command, _ []string) (err error) {
+	sess, p, err := prepareQE(cmd, "regress-suggest")
+	defer func() {
+		if uerr := flushUsage("regress-suggest", sess, err); uerr != nil && err == nil {
+			err = uerr
+		}
+	}()
+	if err != nil {
 		return err
 	}
 	diff, _ := cmd.Flags().GetString("diff")
 	offline := isOffline(cmd)
-	p, cfg, err := loadProvider(offline)
-	if err != nil {
-		return err
-	}
 	model := ""
-	if cfg != nil {
-		model = cfg.Model
+	if sess.cfg != nil {
+		model = sess.cfg.Model
 	}
 	res, err := regress.Run(cmd.Context(), regress.Input{
 		DiffPath: diff,
