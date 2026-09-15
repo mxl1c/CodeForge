@@ -1,0 +1,67 @@
+diff --git a/samples/java-saas-admin/src/main/java/com/example/saasadmin/order/OrderService.java b/samples/java-saas-admin/src/main/java/com/example/saasadmin/order/OrderService.java
+index 1111111..2222222 100644
+--- a/samples/java-saas-admin/src/main/java/com/example/saasadmin/order/OrderService.java
++++ b/samples/java-saas-admin/src/main/java/com/example/saasadmin/order/OrderService.java
+@@ -1,28 +1,44 @@
+ package com.example.saasadmin.order;
+ 
++import com.example.saasadmin.billing.BalanceLedger;
+ import java.util.HashMap;
+ import java.util.Map;
+ 
+ /**
+- * SaaS 中后台订单域骨架。已知缺陷：关闭订单仍可退款，且未校验租户隔离。
++ * SaaS 中后台订单域。本变更接入退款账本，但未校验订单状态与租户。
+  */
+ public class OrderService {
+     private final Map<String, Order> orders = new HashMap<>();
++    private final BalanceLedger ledger = new BalanceLedger();
+ 
+     public void seed(String tenantId, String orderId, String status) {
+         orders.put(orderId, new Order(tenantId, orderId, status));
+     }
+ 
+     public Order get(String tenantId, String orderId) {
+-        // Known defect: ignores tenantId (cross-tenant read).
+         return orders.get(orderId);
+     }
+ 
+     public void refund(String tenantId, String orderId) {
+         Order order = get(tenantId, orderId);
+         if (order == null) {
+             throw new IllegalArgumentException("订单不存在: " + orderId);
+         }
+-        // Known defect CF-W1-001: closed orders can still be refunded; no tenant check.
++        // Fake PR: 财务中后台「一键退款」——按订单号扣减可用余额。
++        // 遗漏：关闭/已退款订单拦截、租户隔离、幂等键。
++        ledger.debit(tenantId, orderId, "CNY", 1280_00);
+         order.status = "refunded";
+     }
+ }
+diff --git a/samples/java-saas-admin/src/main/java/com/example/saasadmin/billing/BalanceLedger.java b/samples/java-saas-admin/src/main/java/com/example/saasadmin/billing/BalanceLedger.java
+new file mode 100644
+index 0000000..3333333
+--- /dev/null
++++ b/samples/java-saas-admin/src/main/java/com/example/saasadmin/billing/BalanceLedger.java
+@@ -0,0 +1,24 @@
++package com.example.saasadmin.billing;
++
++public class BalanceLedger {
++    public void debit(String tenantId, String orderId, String currency, long amountCents) {
++        if (!assertRefundable(orderId)) {
++            throw new LedgerConstraintException("余额已扣减但订单状态不允许退款 closed→refunded");
++        }
++        // 演示用：真实账本不在 W1 样例中实现。
++    }
++
++    private boolean assertRefundable(String orderId) {
++        // Fake PR 缺陷：只记了 orderId，没有读订单状态/租户。
++        return true;
++    }
++}
++
++class LedgerConstraintException extends RuntimeException {
++    LedgerConstraintException(String message) {
++        super(message);
++    }
++}

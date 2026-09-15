@@ -1,0 +1,29 @@
+2026-09-15 14:22:07.331 ERROR [http-nio-8080-exec-4] c.e.s.web.OrderController - 退款失败
+业务上下文: tenant=TNT-星河零售 tenantName=星河零售（演示租户） operator=财务-王敏 scene=中后台-订单退款 orderId=ORD-20260915-0088 status=已关闭
+requestId=req-7f3c2a90 traceId=trace-cf-w1-001
+
+java.lang.IllegalStateException: 退款失败：订单 ORD-20260915-0088 状态为已关闭，但退款接口仍扣减了租户「星河零售」的可用余额（¥1280.00）
+	at com.example.saasadmin.billing.BalanceLedger.debit(BalanceLedger.java:64)
+	at com.example.saasadmin.order.OrderService.refund(OrderService.java:41)
+	at com.example.saasadmin.web.OrderController.refund(OrderController.java:38)
+	at jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at org.springframework.web.method.support.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:255)
+	at org.springframework.web.servlet.mvc.method.annotation.ServletInvocableHandlerMethod.invokeAndHandle(ServletInvocableHandlerMethod.java:118)
+	at org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter.invokeHandlerMethod(RequestMappingHandlerAdapter.java:926)
+	at org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter.handleInternal(RequestMappingHandlerAdapter.java:831)
+	at org.springframework.web.servlet.mvc.method.AbstractHandlerMethodAdapter.handle(AbstractHandlerMethodAdapter.java:87)
+	at org.springframework.web.servlet.DispatcherServlet.doDispatch(DispatcherServlet.java:1089)
+	at org.springframework.web.servlet.DispatcherServlet.doService(DispatcherServlet.java:979)
+	at org.apache.catalina.core.ApplicationFilterChain.internalDoFilter(ApplicationFilterChain.java:195)
+	at org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:140)
+	at com.example.saasadmin.tenant.TenantFilter.doFilter(TenantFilter.java:52)
+	at org.apache.catalina.core.StandardWrapperValve.invoke(StandardWrapperValve.java:167)
+	at org.apache.catalina.connector.CoyoteAdapter.service(CoyoteAdapter.java:344)
+	at org.apache.coyote.http11.Http11Processor.service(Http11Processor.java:398)
+	at org.apache.coyote.AbstractProcessorLight.process(AbstractProcessorLight.java:63)
+	at java.lang.Thread.run(Thread.java:840)
+Caused by: com.example.saasadmin.billing.LedgerConstraintException: 余额已扣减但订单状态不允许退款 closed→refunded
+	at com.example.saasadmin.billing.BalanceLedger.assertRefundable(BalanceLedger.java:91)
+	at com.example.saasadmin.billing.BalanceLedger.debit(BalanceLedger.java:58)
+	... 18 common frames omitted
