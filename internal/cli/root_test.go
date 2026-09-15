@@ -6,11 +6,16 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/mxl1c/CodeForge/internal/provider"
+	"github.com/mxl1c/CodeForge/internal/seat"
+	"github.com/mxl1c/CodeForge/internal/testgen"
 )
 
 func isolateHome(t *testing.T) {
@@ -18,60 +23,238 @@ func isolateHome(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("CODEFORGE_API_KEY", "")
 	t.Setenv("CODEFORGE_BASE_URL", "")
+	t.Setenv("CODEFORGE_MODEL", "")
+	t.Setenv("CODEFORGE_OFFLINE", "")
 }
 
-func TestStubCommandsExitOK(t *testing.T) {
-	isolateHome(t)
-
-	commands := []string{"login", "init", "test-gen", "defect-blame", "regress-suggest"}
-	for _, name := range commands {
-		t.Run(name, func(t *testing.T) {
-			root := NewRoot()
-			buf := new(bytes.Buffer)
-			root.SetOut(buf)
-			root.SetErr(buf)
-			root.SetArgs([]string{name})
-			if err := root.Execute(); err != nil {
-				t.Fatalf("execute: %v\n%s", err, buf.String())
-			}
-			out := buf.String()
-			if !strings.Contains(out, "stub (W1 skeleton)") {
-				t.Fatalf("missing stub output: %q", out)
-			}
-		})
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("caller")
 	}
+	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
 }
 
-func TestTestGenReportsMissingAPIKey(t *testing.T) {
-	isolateHome(t)
+func execRoot(t *testing.T, args ...string) (string, error) {
+	t.Helper()
 	root := NewRoot()
 	buf := new(bytes.Buffer)
 	root.SetOut(buf)
 	root.SetErr(buf)
-	root.SetArgs([]string{"test-gen"})
-	if err := root.Execute(); err != nil {
+	root.SetArgs(args)
+	err := root.Execute()
+	return buf.String(), err
+}
+
+func TestLoginAndInitNotStubs(t *testing.T) {
+	isolateHome(t)
+	out, err := execRoot(t, "login")
+	if err != nil {
+		t.Fatalf("login: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "stub") {
+		t.Fatalf("login still stub: %q", out)
+	}
+	if !strings.Contains(out, "https://api.deepseek.com/v1") {
+		t.Fatalf("login should document DeepSeek-compatible base URL: %q", out)
+	}
+	if !strings.Contains(out, "codeforge seat") {
+		t.Fatalf("login should point at seat command: %q", out)
+	}
+
+	out, err = execRoot(t, "init")
+	if err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "stub") {
+		t.Fatalf("init still stub: %q", out)
+	}
+	if !strings.Contains(out, "seat trial") {
+		t.Fatalf("init should mention seat contract: %q", out)
+	}
+}
+
+func TestSeatLifecycleCommands(t *testing.T) {
+	isolateHome(t)
+	out, err := execRoot(t, "seat", "trial")
+	if err != nil {
+		t.Fatalf("trial: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "trial") {
+		t.Fatalf("%s", out)
+	}
+
+	out, err = execRoot(t, "seat", "activate")
+	if err != nil {
+		t.Fatalf("activate: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "active") {
+		t.Fatalf("%s", out)
+	}
+
+	out, err = execRoot(t, "seat", "suspend")
+	if err != nil {
+		t.Fatalf("suspend: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "suspended") {
+		t.Fatalf("%s", out)
+	}
+
+	out, err = execRoot(t, "seat", "status")
+	if err != nil {
+		t.Fatalf("status: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "suspended") {
+		t.Fatalf("%s", out)
+	}
+
+	_, err = execRoot(t, "seat", "activate")
+	if !errors.Is(err, seat.ErrInvalidTransition) {
+		t.Fatalf("suspended→active: %v", err)
+	}
+
+	_, err = execRoot(t, "login", "trial")
+	if err == nil {
+		t.Fatal("login must not own seat subcommands")
+	}
+}
+
+func TestTestGenGoldenAndEmpty(t *testing.T) {
+	isolateHome(t)
+	mod := filepath.Join(repoRoot(t), "samples", "go-saas-admin")
+	out, err := execRoot(t, "test-gen", "--offline", "--repo", mod)
+	if err != nil {
+		t.Fatalf("golden: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "stub") {
+		t.Fatalf("still stub: %q", out)
+	}
+	if !strings.Contains(out, "RefundRejectsClosedOrder") || !strings.Contains(out, "GetIsTenantScoped") {
+		t.Fatalf("missing cases: %s", out)
+	}
+
+	empty := t.TempDir()
+	out, err = execRoot(t, "test-gen", "--offline", "--repo", empty)
+	if !errors.Is(err, testgen.ErrEmptyModule) {
+		t.Fatalf("empty: err=%v out=%s", err, out)
+	}
+	if strings.Contains(out, "RefundRejectsClosedOrder") {
+		t.Fatalf("fabricated tests: %s", out)
+	}
+}
+
+func TestTestGenJavaGolden(t *testing.T) {
+	isolateHome(t)
+	mod := filepath.Join(repoRoot(t), "samples", "java-saas-admin")
+	out, err := execRoot(t, "test-gen", "--offline", "--repo", mod)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if !strings.Contains(out, "refund") {
+		t.Fatalf("%s", out)
+	}
+}
+
+func TestDefectBlameGoldenAndInsufficient(t *testing.T) {
+	isolateHome(t)
+	stack := filepath.Join(repoRoot(t), "fixtures", "failure-stack-zh.txt")
+	out, err := execRoot(t, "defect-blame", "--offline", "--log", stack)
+	if err != nil {
+		t.Fatalf("golden: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "classification: defect") {
+		t.Fatalf("%s", out)
+	}
+	if !strings.Contains(out, "OrderService") || !strings.Contains(out, "refund") {
+		t.Fatalf("location: %s", out)
+	}
+	if !strings.Contains(out, "repro") {
+		t.Fatalf("missing repro: %s", out)
+	}
+
+	bad := filepath.Join(repoRoot(t), "fixtures", "insufficient-stack.txt")
+	out, err = execRoot(t, "defect-blame", "--offline", "--log", bad)
+	if err == nil {
+		t.Fatalf("insufficient should fail: %s", out)
+	}
+	if strings.Contains(out, "OrderService") {
+		t.Fatalf("invented blame: %s", out)
+	}
+	if !strings.Contains(out, "refusing to invent blame") && !strings.Contains(err.Error(), "insufficient") {
+		t.Fatalf("want insufficient, err=%v out=%s", err, out)
+	}
+}
+
+func TestRegressSuggestGoldenAndDocsOnly(t *testing.T) {
+	isolateHome(t)
+	diff := filepath.Join(repoRoot(t), "fixtures", "fake-pr.diff")
+	out, err := execRoot(t, "regress-suggest", "--offline", "--diff", diff)
+	if err != nil {
+		t.Fatalf("golden: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "P0") || !strings.Contains(out, "P1") {
+		t.Fatalf("want P0 and P1: %s", out)
+	}
+	if strings.Contains(strings.ToLower(out), "full regression") && !strings.Contains(out, "forbidden") {
+		t.Fatalf("full regression: %s", out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "- ") {
+			low := strings.ToLower(line)
+			if strings.Contains(low, "full regression") || strings.Contains(low, "全量回归") {
+				t.Fatalf("suggestion line: %s", line)
+			}
+		}
+	}
+
+	docs := filepath.Join(repoRoot(t), "fixtures", "docs-only.diff")
+	out, err = execRoot(t, "regress-suggest", "--offline", "--diff", docs)
+	if err != nil {
+		t.Fatalf("docs: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "docs-only") {
+		t.Fatalf("%s", out)
+	}
+	if strings.Contains(out, "- P0") || strings.Contains(out, "- P1") {
+		t.Fatalf("docs escalated: %s", out)
+	}
+
+	empty := filepath.Join(t.TempDir(), "empty.diff")
+	if err := os.WriteFile(empty, []byte("\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), "missing API key") {
-		t.Fatalf("output=%q", buf.String())
+	_, err = execRoot(t, "regress-suggest", "--offline", "--diff", empty)
+	if err == nil {
+		t.Fatal("empty diff should fail")
+	}
+}
+
+func TestSuspendedBlocksVerticalCommands(t *testing.T) {
+	isolateHome(t)
+	if _, err := execRoot(t, "seat", "trial"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execRoot(t, "seat", "activate"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execRoot(t, "seat", "suspend"); err != nil {
+		t.Fatal(err)
+	}
+	mod := filepath.Join(repoRoot(t), "samples", "go-saas-admin")
+	_, err := execRoot(t, "test-gen", "--offline", "--repo", mod)
+	if !errors.Is(err, seat.ErrSuspended) {
+		t.Fatalf("want ErrSuspended, got %v", err)
 	}
 }
 
 func TestProviderPing_MissingAPIKey(t *testing.T) {
 	isolateHome(t)
-	root := NewRoot()
-	buf := new(bytes.Buffer)
-	root.SetOut(buf)
-	root.SetErr(buf)
-	root.SetArgs([]string{"provider", "ping"})
-	err := root.Execute()
-	if err == nil {
-		t.Fatalf("expected error, got output %q", buf.String())
-	}
+	_, err := execRoot(t, "provider", "ping")
 	if !errors.Is(err, provider.ErrNoAPIKey) {
 		t.Fatalf("want ErrNoAPIKey, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "CODEFORGE_API_KEY") {
+	if err == nil || !strings.Contains(err.Error(), "CODEFORGE_API_KEY") {
 		t.Fatalf("error should mention CODEFORGE_API_KEY: %v", err)
 	}
 }
@@ -114,15 +297,10 @@ func TestProviderPing_CompleteOnce(t *testing.T) {
 	t.Setenv("CODEFORGE_API_KEY", "test-key")
 	t.Setenv("CODEFORGE_BASE_URL", srv.URL)
 
-	root := NewRoot()
-	buf := new(bytes.Buffer)
-	root.SetOut(buf)
-	root.SetErr(buf)
-	root.SetArgs([]string{"provider", "ping"})
-	if err := root.Execute(); err != nil {
-		t.Fatalf("execute: %v\n%s", err, buf.String())
+	out, err := execRoot(t, "provider", "ping")
+	if err != nil {
+		t.Fatalf("execute: %v\n%s", err, out)
 	}
-	out := buf.String()
 	if !strings.Contains(out, "provider ping: ok") {
 		t.Fatalf("missing success: %q", out)
 	}
@@ -137,7 +315,7 @@ func TestProviderPing_CompleteOnce(t *testing.T) {
 	}
 }
 
-func TestStubsDoNotCallComplete(t *testing.T) {
+func TestOfflineVerticalDoesNotCallComplete(t *testing.T) {
 	isolateHome(t)
 
 	var calls atomic.Int32
@@ -150,20 +328,155 @@ func TestStubsDoNotCallComplete(t *testing.T) {
 	t.Setenv("CODEFORGE_API_KEY", "test-key")
 	t.Setenv("CODEFORGE_BASE_URL", srv.URL)
 
-	for _, name := range []string{"login", "init", "test-gen", "defect-blame", "regress-suggest"} {
-		root := NewRoot()
-		buf := new(bytes.Buffer)
-		root.SetOut(buf)
-		root.SetErr(buf)
-		root.SetArgs([]string{name})
-		if err := root.Execute(); err != nil {
-			t.Fatalf("%s: %v\n%s", name, err, buf.String())
-		}
-		if !strings.Contains(buf.String(), "stub (W1 skeleton)") {
-			t.Fatalf("%s missing stub output: %q", name, buf.String())
-		}
+	mod := filepath.Join(repoRoot(t), "samples", "go-saas-admin")
+	stack := filepath.Join(repoRoot(t), "fixtures", "failure-stack-zh.txt")
+	diff := filepath.Join(repoRoot(t), "fixtures", "fake-pr.diff")
+
+	if _, err := execRoot(t, "login"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execRoot(t, "test-gen", "--offline", "--repo", mod); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execRoot(t, "defect-blame", "--offline", "--log", stack); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execRoot(t, "regress-suggest", "--offline", "--diff", diff); err != nil {
+		t.Fatal(err)
 	}
 	if got := calls.Load(); got != 0 {
-		t.Fatalf("stubs must not call Complete, got %d HTTP requests", got)
+		t.Fatalf("--offline must not call Complete, got %d", got)
+	}
+}
+
+func TestTestGenCallsProviderWhenKeyPresent(t *testing.T) {
+	isolateHome(t)
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"cases":[]}`}},
+			},
+		})
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("CODEFORGE_API_KEY", "test-key")
+	t.Setenv("CODEFORGE_BASE_URL", srv.URL)
+
+	mod := filepath.Join(repoRoot(t), "samples", "go-saas-admin")
+	out, err := execRoot(t, "test-gen", "--repo", mod)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("calls=%d", calls.Load())
+	}
+	if !strings.Contains(out, "mode: provider") {
+		t.Fatalf("%s", out)
+	}
+}
+
+func TestMissingFlagsFail(t *testing.T) {
+	isolateHome(t)
+	if _, err := execRoot(t, "test-gen", "--offline"); err == nil {
+		t.Fatal("test-gen without --repo must fail")
+	}
+}
+
+func TestLockedCLIContracts(t *testing.T) {
+	isolateHome(t)
+	root := NewRoot()
+
+	names := map[string]bool{}
+	for _, c := range root.Commands() {
+		names[c.Name()] = true
+	}
+	for _, want := range []string{"login", "init", "test-gen", "defect-blame", "regress-suggest", "seat"} {
+		if !names[want] {
+			t.Fatalf("missing command %s", want)
+		}
+	}
+
+	tg, _, err := root.Find([]string{"test-gen"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tg.Flags().Lookup("repo") == nil {
+		t.Fatal("test-gen must expose --repo")
+	}
+	if tg.Flags().Lookup("module") != nil {
+		t.Fatal("do not invent --module; locked flag is --repo")
+	}
+
+	db, _, err := root.Find([]string{"defect-blame"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	logFlag := db.Flags().Lookup("log")
+	if logFlag == nil {
+		t.Fatal("defect-blame must expose --log")
+	}
+	if logFlag.DefValue != defaultLogPath {
+		t.Fatalf("default --log=%q want %q", logFlag.DefValue, defaultLogPath)
+	}
+	if db.Flags().Lookup("stack") != nil {
+		t.Fatal("do not invent --stack; locked flag is --log")
+	}
+
+	rs, _, err := root.Find([]string{"regress-suggest"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	diffFlag := rs.Flags().Lookup("diff")
+	if diffFlag == nil {
+		t.Fatal("regress-suggest must expose --diff")
+	}
+	if diffFlag.DefValue != defaultDiffPath {
+		t.Fatalf("default --diff=%q want %q", diffFlag.DefValue, defaultDiffPath)
+	}
+
+	seatCmd, _, err := root.Find([]string{"seat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	subs := map[string]bool{}
+	for _, c := range seatCmd.Commands() {
+		subs[c.Name()] = true
+	}
+	for _, want := range []string{"trial", "activate", "suspend", "status"} {
+		if !subs[want] {
+			t.Fatalf("seat missing %s", want)
+		}
+	}
+
+	out, err := execRoot(t, "test-gen", "--offline", "--module", t.TempDir())
+	if err == nil {
+		t.Fatalf("unknown --module must fail, out=%s", out)
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repoRoot(t)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+
+	out, err = execRoot(t, "defect-blame", "--offline")
+	if err != nil {
+		t.Fatalf("default --log: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "classification: defect") {
+		t.Fatalf("default log golden: %s", out)
+	}
+
+	out, err = execRoot(t, "regress-suggest", "--offline")
+	if err != nil {
+		t.Fatalf("default --diff: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "P0") {
+		t.Fatalf("default diff golden: %s", out)
 	}
 }

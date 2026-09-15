@@ -1,4 +1,9 @@
 # Project-level CodeForge config. Do not put secrets here.
 # API key: CODEFORGE_API_KEY or ~/.codeforge/config.yaml
+#
+# Provider is any OpenAI-compatible Chat Completions gateway — not only
+# official OpenAI. DeepSeek example:
+#   base_url: https://api.deepseek.com/v1
+#   model: deepseek-chat
 base_url: https://api.openai.com/v1
 model: gpt-4o-mini
