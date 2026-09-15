@@ -1,0 +1,39 @@
+diff --git a/src/main/java/com/codeforge/saas/admin/order/OrderApprovalService.java b/src/main/java/com/codeforge/saas/admin/order/OrderApprovalService.java
+index 1111111..2222222 100644
+--- a/src/main/java/com/codeforge/saas/admin/order/OrderApprovalService.java
++++ b/src/main/java/com/codeforge/saas/admin/order/OrderApprovalService.java
+@@ -96,10 +96,18 @@ public class OrderApprovalService {
+         tenantGuard.assertSameTenant(actor, order.getTenantId());
+         if (!statusMachine.canTransit(order.getStatus(), OrderStatus.APPROVED)) {
+             throw new IllegalStateException("illegal transit " + order.getStatus());
+         }
+-        order.setStatus(OrderStatus.APPROVED);
+-        orderRepository.save(order);
+-        inventory.reserve(order.getSkuId(), order.getQuantity());
++        // W1 fake PR: finance-role gate + inventory rollback on reserve failure
++        tenantGuard.assertPermission(actor, "order.approve.finance");
++        try {
++            inventory.reserve(order.getSkuId(), order.getQuantity());
++            order.setStatus(OrderStatus.APPROVED);
++            orderRepository.save(order);
++        } catch (InsufficientStockException ex) {
++            order.setStatus(OrderStatus.PENDING_FINANCE);
++            orderRepository.save(order);
++            throw ex;
++        }
+         auditLog.record(order.getId(), "APPROVE", actor.getId());
+         return order;
+     }
+ }
+diff --git a/src/main/java/com/codeforge/saas/admin/order/DiscountPolicy.java b/src/main/java/com/codeforge/saas/admin/order/DiscountPolicy.java
+index 3333333..4444444 100644
+--- a/src/main/java/com/codeforge/saas/admin/order/DiscountPolicy.java
++++ b/src/main/java/com/codeforge/saas/admin/order/DiscountPolicy.java
+@@ -20,6 +20,9 @@ public final class DiscountPolicy {
+     public BigDecimal apply(BigDecimal listPrice, BigDecimal discountRate) {
++        if (discountRate.signum() < 0) {
++            throw new IllegalArgumentException("discount must not be negative");
++        }
+         return listPrice.multiply(BigDecimal.ONE.subtract(discountRate));
+     }
+ }

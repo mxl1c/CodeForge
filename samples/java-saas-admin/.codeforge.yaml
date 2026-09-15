@@ -1,0 +1,4 @@
+project: java-saas-admin
+language: java
+test:
+  framework: junit5

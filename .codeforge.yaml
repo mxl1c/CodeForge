@@ -1,0 +1,4 @@
+project: codeforge
+language: go
+test:
+  framework: testing

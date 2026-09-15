@@ -1,0 +1,14 @@
+java.lang.IllegalStateException: 订单审批失败：租户「华东零售旗舰店」下单号 SO-20260915-88421 当前状态为「待财务复核」，操作人「李敏(采购主管)」无权跨角色推进至「已通过」
+	at com.codeforge.saas.admin.order.OrderApprovalService.approve(OrderApprovalService.java:118)
+	at com.codeforge.saas.admin.order.OrderApprovalService.approve(OrderApprovalService.java:91)
+	at com.codeforge.saas.admin.web.OrderAdminController.approve(OrderAdminController.java:64)
+	at jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+Caused by: com.codeforge.saas.admin.security.PermissionDeniedException: 权限点 order.approve.finance 未授予角色 ROLE_PURCHASE_LEAD（租户隔离策略：strict）
+	at com.codeforge.saas.admin.security.TenantGuard.assertPermission(TenantGuard.java:77)
+	at com.codeforge.saas.admin.security.TenantGuard.assertSameTenant(TenantGuard.java:52)
+	at com.codeforge.saas.admin.order.OrderApprovalService.approve(OrderApprovalService.java:109)
+	... 24 common frames omitted
+Caused by: com.codeforge.saas.admin.audit.AuditWriteException: 审计流水写入失败，业务库 t_order_audit 约束 uk_order_action 冲突（order_id=88421, action=APPROVE）
+	at com.codeforge.saas.admin.audit.AuditLogInterceptor.after(AuditLogInterceptor.java:141)
+	at com.codeforge.saas.admin.order.OrderApprovalService.approve(OrderApprovalService.java:114)
+	... 28 common frames omitted

@@ -1,0 +1,9 @@
+/bin/
+/codeforge
+*.exe
+*.test
+.idea/
+.vscode/
+*.swp
+.env
+.env.*

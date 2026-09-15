@@ -1,0 +1,4 @@
+project: go-saas-admin
+language: go
+test:
+  framework: testing
