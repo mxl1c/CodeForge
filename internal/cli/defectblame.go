@@ -27,19 +27,21 @@ Failure: fixtures/insufficient-stack.txt (or empty) exits non-zero without inven
 	return cmd
 }
 
-func runDefectBlame(cmd *cobra.Command, _ []string) error {
-	if _, err := requireSeat("defect-blame"); err != nil {
+func runDefectBlame(cmd *cobra.Command, _ []string) (err error) {
+	sess, p, err := prepareQE(cmd, "defect-blame")
+	defer func() {
+		if uerr := flushUsage("defect-blame", sess, err); uerr != nil && err == nil {
+			err = uerr
+		}
+	}()
+	if err != nil {
 		return err
 	}
 	logPath, _ := cmd.Flags().GetString("log")
 	offline := isOffline(cmd)
-	p, cfg, err := loadProvider(offline)
-	if err != nil {
-		return err
-	}
 	model := ""
-	if cfg != nil {
-		model = cfg.Model
+	if sess.cfg != nil {
+		model = sess.cfg.Model
 	}
 	res, err := blame.Run(cmd.Context(), blame.Input{
 		StackPath: logPath,

@@ -11,14 +11,20 @@ import (
 func newSeatCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "seat",
-		Short: "Seat lifecycle: trial → active → suspended",
-		Long: `Local seat ledger (not cloud billing): ~/.codeforge/seat.json
+		Short: "Seat lifecycle + offline tiers (not payment)",
+		Long: `Local seat ledger (not cloud billing / not online payment): ~/.codeforge/seat.json
 
-Locked M1 contract:
+Lifecycle (unchanged from M1):
   codeforge seat trial      # (none) → trial
   codeforge seat activate   # trial → active
   codeforge seat suspend    # active → suspended
-  codeforge seat status     # print ledger
+  codeforge seat status     # print ledger (includes tier)
+
+Offline commercial labels (no checkout):
+  codeforge seat tier              # show current tier
+  codeforge seat tier free         # Free
+  codeforge seat tier pro          # ~¥140
+  codeforge seat tier business     # ~¥700–1400
 
 Illegal jumps (e.g. trial→suspend, suspended→active) fail and do not mutate state.
 Suspended seats block test-gen / defect-blame / regress-suggest.
@@ -31,6 +37,7 @@ CodeForge is a test/QE wedge, not a general IDE.`,
 		newSeatActivateCmd(),
 		newSeatSuspendCmd(),
 		newSeatStatusCmd(),
+		newSeatTierCmd(),
 	)
 	return cmd
 }
@@ -38,7 +45,7 @@ CodeForge is a test/QE wedge, not a general IDE.`,
 func newSeatStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Show local seat ledger",
+		Short: "Show local seat ledger (state + tier)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			st, err := seatStore()
 			if err != nil {
@@ -48,7 +55,8 @@ func newSeatStatusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "[codeforge] seat status: %s\n", rec.State)
+			fmt.Fprintf(cmd.OutOrStdout(), "[codeforge] seat status: %s tier=%s (%s)\n",
+				rec.State, rec.EffectiveTier(), rec.EffectiveTier().Label())
 			printSeat(cmd, rec)
 			return nil
 		},
@@ -81,6 +89,48 @@ func newSeatSuspendCmd() *cobra.Command {
 		Short: "Suspend seat (active → suspended)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return transitionSeat(cmd, seat.StateSuspended, "seat suspend")
+		},
+	}
+}
+
+func newSeatTierCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "tier [free|pro|business]",
+		Short: "Show or set offline seat tier (not payment)",
+		Long: `Show or set the local commercial label. This does not charge or open a checkout.
+
+  free      Free
+  pro       ~¥140
+  business  ~¥700–1400
+
+Lifecycle stays trial → active → suspended. Setting a tier never invents payment.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			st, err := seatStore()
+			if err != nil {
+				return err
+			}
+			if len(args) == 0 {
+				rec, err := st.Load()
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "[codeforge] seat tier: %s (%s)\n", rec.EffectiveTier(), rec.EffectiveTier().Label())
+				printSeat(cmd, rec)
+				return nil
+			}
+			tier, err := seat.ParseTier(args[0])
+			if err != nil {
+				return err
+			}
+			rec, err := st.SetTier(tier, "seat tier")
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "[codeforge] seat tier set: %s (%s) (offline label, not payment)\n",
+				rec.EffectiveTier(), rec.EffectiveTier().Label())
+			printSeat(cmd, rec)
+			return nil
 		},
 	}
 }

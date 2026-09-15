@@ -1,4 +1,5 @@
-// Package seat is a minimal local seat ledger: trial → active → suspended.
+// Package seat is a minimal local seat ledger: trial → active → suspended,
+// with offline commercial tier labels (not online payment).
 package seat
 
 import (
@@ -7,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -18,10 +20,21 @@ const (
 	StateSuspended State = "suspended"
 )
 
+// Tier is an offline commercial label on the local ledger.
+// There is no checkout, gateway, or payment flow.
+type Tier string
+
+const (
+	TierFree     Tier = "free"
+	TierPro      Tier = "pro"
+	TierBusiness Tier = "business"
+)
+
 var (
 	ErrInvalidTransition = errors.New("invalid seat transition")
 	ErrSuspended         = errors.New("seat suspended: vertical QE commands are blocked until the seat is no longer suspended")
 	ErrNoSeat            = errors.New("no seat ledger")
+	ErrInvalidTier       = errors.New("invalid seat tier: use free, pro, or business (offline labels, not payment)")
 )
 
 // Record is the on-disk seat ledger (not cloud billing).
@@ -29,6 +42,7 @@ type Record struct {
 	Tenant    string       `json:"tenant"`
 	SeatID    string       `json:"seat_id"`
 	State     State        `json:"state"`
+	Tier      Tier         `json:"tier"`
 	UpdatedAt time.Time    `json:"updated_at"`
 	History   []Transition `json:"history"`
 }
@@ -38,6 +52,7 @@ type Transition struct {
 	To   State     `json:"to"`
 	At   time.Time `json:"at"`
 	Via  string    `json:"via"`
+	Tier Tier      `json:"tier,omitempty"`
 }
 
 type Store struct {
@@ -52,6 +67,51 @@ func Open(home string) *Store {
 	return &Store{path: PathForHome(home)}
 }
 
+func ParseTier(s string) (Tier, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "free":
+		return TierFree, nil
+	case "pro":
+		return TierPro, nil
+	case "business":
+		return TierBusiness, nil
+	default:
+		return "", fmt.Errorf("%w: %q", ErrInvalidTier, s)
+	}
+}
+
+// Label is the human-readable price band. These are labels only — not invoices.
+func (t Tier) Label() string {
+	switch t.Normalize() {
+	case TierFree:
+		return "Free"
+	case TierPro:
+		return "~¥140"
+	case TierBusiness:
+		return "~¥700–1400"
+	default:
+		return string(t)
+	}
+}
+
+func (t Tier) Normalize() Tier {
+	if t == "" {
+		return TierFree
+	}
+	return t
+}
+
+func (r *Record) EffectiveTier() Tier {
+	if r == nil {
+		return TierFree
+	}
+	return r.Tier.Normalize()
+}
+
+func newRecord() *Record {
+	return &Record{Tenant: "local", SeatID: "seat-local", Tier: TierFree}
+}
+
 func (s *Store) Load() (*Record, error) {
 	data, err := os.ReadFile(s.path)
 	if err != nil {
@@ -64,6 +124,13 @@ func (s *Store) Load() (*Record, error) {
 	if err := json.Unmarshal(data, &rec); err != nil {
 		return nil, fmt.Errorf("parse seat ledger: %w", err)
 	}
+	rec.Tier = rec.Tier.Normalize()
+	if rec.Tenant == "" {
+		rec.Tenant = "local"
+	}
+	if rec.SeatID == "" {
+		rec.SeatID = "seat-local"
+	}
 	return &rec, nil
 }
 
@@ -71,6 +138,7 @@ func (s *Store) save(rec *Record) error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
 		return fmt.Errorf("seat dir: %w", err)
 	}
+	rec.Tier = rec.Tier.Normalize()
 	data, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
 		return err
@@ -99,7 +167,7 @@ func (s *Store) Transition(to State, via string) (*Record, error) {
 	rec, err := s.Load()
 	var from State
 	if errors.Is(err, ErrNoSeat) {
-		rec = &Record{Tenant: "local", SeatID: "seat-local"}
+		rec = newRecord()
 		from = ""
 	} else if err != nil {
 		return nil, err
@@ -115,8 +183,28 @@ func (s *Store) Transition(to State, via string) (*Record, error) {
 	}
 	now := time.Now().UTC()
 	rec.State = to
+	rec.Tier = rec.Tier.Normalize()
 	rec.UpdatedAt = now
-	rec.History = append(rec.History, Transition{From: from, To: to, At: now, Via: via})
+	rec.History = append(rec.History, Transition{From: from, To: to, At: now, Via: via, Tier: rec.Tier})
+	if err := s.save(rec); err != nil {
+		return nil, err
+	}
+	return rec, nil
+}
+
+// SetTier writes an offline commercial label. It does not charge, invoice, or change lifecycle.
+func (s *Store) SetTier(tier Tier, via string) (*Record, error) {
+	parsed, err := ParseTier(string(tier))
+	if err != nil {
+		return nil, err
+	}
+	rec, err := s.EnsureTrial(via)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	rec.Tier = parsed
+	rec.UpdatedAt = now
 	if err := s.save(rec); err != nil {
 		return nil, err
 	}
