@@ -1,0 +1,17 @@
+2026-03-12 10:23:41.882 ERROR [http-nio-8080-exec-4] com.example.saasadmin.order.OrderController - 租户【T-10086】审批流执行失败：工单【WO-20260312-008】状态不允许从「已关闭」流转到「已出账」
+com.example.saasadmin.common.BizException: 工单状态不允许从「已关闭」流转到「已出账」
+	at com.example.saasadmin.order.OrderService.transition(OrderService.java:42)
+	at com.example.saasadmin.order.OrderService.settle(OrderService.java:28)
+	at com.example.saasadmin.order.OrderController.settle(OrderController.java:61)
+	at jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at org.springframework.web.method.support.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:255)
+	at org.springframework.web.servlet.mvc.method.AbstractHandlerMethodAdapter.handle(AbstractHandlerMethodAdapter.java:87)
+	at org.apache.catalina.core.StandardWrapperValve.invoke(StandardWrapperValve.java:167)
+Caused by: org.springframework.dao.DataIntegrityViolationException: could not execute statement; SQL [n/a]; constraint [uk_work_order_ledger_tenant]
+	at org.hibernate.exception.internal.SQLExceptionTypeDelegate.convert(SQLExceptionTypeDelegate.java:63)
+	at com.zaxxer.hikari.pool.HikariProxyPreparedStatement.executeUpdate(HikariProxyPreparedStatement.java)
+	... 37 common frames omitted
+Caused by: java.sql.SQLIntegrityConstraintViolationException: Duplicate entry 'T-10086-WO-20260312-008' for key 'uk_work_order_ledger_tenant'
+	at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:117)
+	... 52 common frames omitted
+业务上下文（脱敏）：租户展示名=示例科技, 部门=财务共享中心, 操作人席位=qe.demo, 动作=工单出账

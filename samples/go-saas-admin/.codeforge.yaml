@@ -1,0 +1,5 @@
+project:
+  name: go-saas-admin
+  languages:
+    - go
+wedge: test-qe

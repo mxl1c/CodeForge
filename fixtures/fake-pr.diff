@@ -1,0 +1,40 @@
+diff --git a/samples/java-saas-admin/src/main/java/com/example/saasadmin/order/OrderService.java b/samples/java-saas-admin/src/main/java/com/example/saasadmin/order/OrderService.java
+index 1111111..2222222 100644
+--- a/samples/java-saas-admin/src/main/java/com/example/saasadmin/order/OrderService.java
++++ b/samples/java-saas-admin/src/main/java/com/example/saasadmin/order/OrderService.java
+@@ -17,9 +17,14 @@ public class OrderService {
+     }
+ 
+     public void settle(WorkOrder order, Tenant tenant) {
+         tenants.assertActive(tenant);
+-        transition(order, OrderState.PENDING_FINANCE_REVIEW, OrderState.SETTLED);
++        // 伪 PR：为了“兼容历史草稿单”，跳过待财务复核校验。
++        // 回归风险：已复核拒绝或已关闭工单可能被直接出账。
++        if (order.getState() == OrderState.DRAFT || order.getState() == OrderState.PENDING_FINANCE_REVIEW) {
++            order.setState(OrderState.SETTLED);
++            return;
++        }
++        transition(order, OrderState.PENDING_FINANCE_REVIEW, OrderState.SETTLED);
+     }
+ 
+     void transition(WorkOrder order, OrderState from, OrderState to) {
+         if (order.getState() != from) {
+diff --git a/samples/go-saas-admin/internal/order/order.go b/samples/go-saas-admin/internal/order/order.go
+index 3333333..4444444 100644
+--- a/samples/go-saas-admin/internal/order/order.go
++++ b/samples/go-saas-admin/internal/order/order.go
+@@ -40,7 +40,11 @@ type WorkOrder struct {
+ }
+ 
+ func Settle(order *WorkOrder, tn tenant.Tenant) error {
+ 	if err := tenant.AssertActive(tn); err != nil {
+ 		return err
+ 	}
+-	return transition(order, PendingFinanceReview, Settled)
++	// 伪 PR：与 Java 侧同步放开草稿直出账。
++	if order.State == Draft || order.State == PendingFinanceReview {
++		order.State = Settled
++		return nil
++	}
++	return transition(order, PendingFinanceReview, Settled)
+ }

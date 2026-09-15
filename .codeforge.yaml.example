@@ -1,0 +1,15 @@
+# CodeForge 项目配置示例
+# 复制为 .codeforge.yaml 或运行 `codeforge init`
+project:
+  name: codeforge
+  languages:
+    - java
+    - go
+wedge: test-qe
+paths:
+  samples:
+    java: samples/java-saas-admin
+    go: samples/go-saas-admin
+  fixtures:
+    failure_stack: fixtures/failure-stack-zh.txt
+    fake_pr: fixtures/fake-pr.diff

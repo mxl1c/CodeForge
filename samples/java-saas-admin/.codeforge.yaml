@@ -1,0 +1,5 @@
+project:
+  name: java-saas-admin
+  languages:
+    - java
+wedge: test-qe
