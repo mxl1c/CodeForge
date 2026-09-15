@@ -15,10 +15,11 @@
 | 语言 | Go **1.22+** |
 | CLI 框架 | [spf13/cobra](https://github.com/spf13/cobra) |
 | 二进制名 | `codeforge` |
-| 子命令（仅此五条） | `login` · `init` · `test-gen` · `defect-blame` · `regress-suggest` |
-| W1 行为 | 五条命令均为 stub：明确输出 + **exit 0** |
+| 产品子命令（仅此五条） | `login` · `init` · `test-gen` · `defect-blame` · `regress-suggest` |
+| W1 产品命令行为 | 五条均为 stub：明确输出 + **exit 0**；**不**调用模型 |
+| 诊断命令（非产品） | `provider ping`（W1-05 API smoke） |
 
-不增加第六条产品命令（含 `version` 作为独立产品命令）。Cobra 自带 `help` 保留。
+不增加第六条产品命令（含 `version` 作为独立产品命令）。Cobra 自带 `help` 保留。`provider ping` 是诊断/冒烟入口，不计入产品命令范围。
 
 ## Provider
 
@@ -31,6 +32,8 @@
 | 默认模型名 | `gpt-4o-mini`（可被配置覆盖；实际模型由兼容网关决定） |
 
 W1 接通适配器与错误路径；不在 stub 命令里真实跑测例生成。
+
+W1-05：`codeforge provider ping` 在凭据存在时发起 **一次** 真实 Chat Completions `Complete`（`POST {base_url}/chat/completions`），成功则打印 model / token usage 并以 0 退出；缺失 `CODEFORGE_API_KEY`（及配置 `api_key`）时明确报错、非 0 退出。产品五命令仍不得调用模型。
 
 ## 配置
 

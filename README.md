@@ -28,7 +28,7 @@ go install ./cmd/codeforge
 
 ## Commands
 
-Binary name: `codeforge`. W1 commands are stubs: they print a clear status line and **exit 0**.
+Binary name: `codeforge`. The **five product commands** are W1 stubs: they print a clear status line and **exit 0**. They do **not** call the model.
 
 | Command | Purpose |
 |---|---|
@@ -48,6 +48,19 @@ Binary name: `codeforge`. W1 commands are stubs: they print a clear status line 
 ```
 
 `test-gen` / `defect-blame` / `regress-suggest` construct the OpenAI-compatible provider. If no API key is configured they print a graceful error and still exit 0 (stub). They do not call the model in W1.
+
+## W1-05 API smoke (`provider ping`)
+
+`codeforge provider ping` is a **diagnostic** command (not a sixth product command). It performs **one** real OpenAI-compatible Chat Completions `Complete` call.
+
+```bash
+export CODEFORGE_API_KEY=sk-...          # or api_key in ~/.codeforge/config.yaml
+# optional: export CODEFORGE_BASE_URL=https://api.openai.com/v1
+./codeforge provider ping
+```
+
+- Missing `CODEFORGE_API_KEY` and no config `api_key`: clear error, **non-zero exit**
+- With credentials: one HTTP `POST {base_url}/chat/completions`, prints model and token usage, **exit 0**
 
 ## Config
 
