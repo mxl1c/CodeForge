@@ -11,17 +11,20 @@ import (
 func newTestGenCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "test-gen",
-		Short: "Generate QE tests from a Java/Go module (no fabricated cases)",
-		Long: `Scan production source under --module and emit evidence-backed test cases.
+		Short: "Generate QE tests from a Java/Go repo (no fabricated cases)",
+		Long: `Scan production source under --repo and emit evidence-backed test cases.
+
+Locked flag: --repo <path>  (do not use other names)
 
 Golden: samples/java-saas-admin or samples/go-saas-admin
-Failure: empty module exits non-zero and does not invent tests.
+Failure: empty repo exits non-zero and does not invent tests.
 
 With CODEFORGE_API_KEY (and not --offline), one provider Complete call may add
 cases; symbols not present in the scan are dropped.`,
 		RunE: runTestGen,
 	}
-	cmd.Flags().String("module", "", "path to Java or Go module (e.g. samples/go-saas-admin)")
+	cmd.Flags().String("repo", "", "path to Java or Go repo (e.g. samples/go-saas-admin)")
+	_ = cmd.MarkFlagRequired("repo")
 	addOfflineFlag(cmd)
 	return cmd
 }
@@ -30,7 +33,7 @@ func runTestGen(cmd *cobra.Command, _ []string) error {
 	if _, err := requireSeat("test-gen"); err != nil {
 		return err
 	}
-	module, _ := cmd.Flags().GetString("module")
+	repo, _ := cmd.Flags().GetString("repo")
 	offline := isOffline(cmd)
 	p, cfg, err := loadProvider(offline)
 	if err != nil {
@@ -41,7 +44,7 @@ func runTestGen(cmd *cobra.Command, _ []string) error {
 		model = cfg.Model
 	}
 	res, err := testgen.Run(cmd.Context(), testgen.Input{
-		ModuleDir: module,
+		ModuleDir: repo,
 		Offline:   offline || p == nil,
 		Provider:  p,
 		Model:     model,
@@ -50,7 +53,7 @@ func runTestGen(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "[codeforge] test-gen: ok\n")
-	fmt.Fprintf(cmd.OutOrStdout(), "module: %s\n", res.Module)
+	fmt.Fprintf(cmd.OutOrStdout(), "repo: %s\n", res.Module)
 	fmt.Fprintf(cmd.OutOrStdout(), "mode: %s\n", res.Mode)
 	fmt.Fprintf(cmd.OutOrStdout(), "cases: %d\n", len(res.Cases))
 	for _, c := range res.Cases {

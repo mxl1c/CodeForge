@@ -8,17 +8,21 @@ import (
 	"github.com/mxl1c/CodeForge/internal/regress"
 )
 
+const defaultDiffPath = "fixtures/fake-pr.diff"
+
 func newRegressSuggestCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "regress-suggest",
 		Short: "Suggest P0 smoke / P1 core / P2 peripheral regression (no full suite)",
 		Long: `Read --diff and suggest targeted regression. Full regression / 全量回归 is forbidden.
 
+Locked flag: --diff <path>  (default: fixtures/fake-pr.diff)
+
 Golden: fixtures/fake-pr.diff
 Failure: empty diff exits non-zero; docs-only diffs stay P2 and do not escalate.`,
 		RunE: runRegressSuggest,
 	}
-	cmd.Flags().String("diff", "", "path to unified diff (e.g. fixtures/fake-pr.diff)")
+	cmd.Flags().String("diff", defaultDiffPath, "path to unified diff (default fixtures/fake-pr.diff)")
 	addOfflineFlag(cmd)
 	return cmd
 }
@@ -47,6 +51,7 @@ func runRegressSuggest(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "[codeforge] regress-suggest: ok\n")
+	fmt.Fprintf(cmd.OutOrStdout(), "diff: %s\n", diff)
 	fmt.Fprintf(cmd.OutOrStdout(), "mode: %s\n", res.Mode)
 	fmt.Fprintf(cmd.OutOrStdout(), "policy: %s\n", res.Policy)
 	if res.DocsOnly {

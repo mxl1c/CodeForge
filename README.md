@@ -2,7 +2,14 @@
 
 Enterprise coding Agent CLI — **test/quality engineering wedge**（企业测试/QE CLI 楔子，**不是**通用 IDE 或聊天框）。
 
-M1 在 W1 骨架上把三条垂直命令做成真实路径（黄金路径 + 失败路径），并加上本地席位状态机。
+M1 锁定下列 CLI 契约（不要使用其它 flag 名）：
+
+```bash
+codeforge test-gen --repo <path>
+codeforge defect-blame --log <path>          # default: fixtures/failure-stack-zh.txt
+codeforge regress-suggest --diff <path>      # default: fixtures/fake-pr.diff
+codeforge seat trial|activate|suspend|status # trial → active → suspended
+```
 
 ## Build / Install
 
@@ -22,9 +29,9 @@ go install ./cmd/codeforge
 
 ## Provider（OpenAI-compatible 网关，不绑死官方 OpenAI）
 
-适配器走 Chat Completions：`POST {base_url}/chat/completions`。默认值仍是兼容占位；**请按网关配置** `base_url` / `model`。
+适配器走 Chat Completions：`POST {base_url}/chat/completions`。**请按网关配置** `base_url` / `model`。官方 OpenAI 只是兼容端点之一。
 
-DeepSeek 示例：
+DeepSeek-compatible default Base URL 示例：
 
 ```bash
 export CODEFORGE_API_KEY=sk-...
@@ -33,106 +40,102 @@ export CODEFORGE_MODEL=deepseek-chat
 ./codeforge provider ping
 ```
 
-其他兼容网关同样设置 `CODEFORGE_BASE_URL` + `CODEFORGE_MODEL`（或写入 `~/.codeforge/config.yaml`）。
+或写入 `~/.codeforge/config.yaml`：
+
+```yaml
+api_key: sk-...
+base_url: https://api.deepseek.com/v1
+model: deepseek-chat
+```
 
 无密钥时，三条垂直命令走 **本地确定性分析**（CI 友好）。有密钥且未加 `--offline` 时，会额外调用一次 provider；模型编造的文件/函数会被丢弃。
 
-CI 夹具模式：
-
 ```bash
 export CODEFORGE_OFFLINE=1
-# or
-./codeforge test-gen --offline --module samples/go-saas-admin
+./codeforge test-gen --offline --repo samples/go-saas-admin
 ```
 
-## Seat lifecycle（席位：trial → active → suspended）
+## Seat lifecycle
 
-本地账本：`~/.codeforge/seat.json`（不是云计费）。**不新增第六条产品命令**，挂在 `login` 子命令上。
+本地账本：`~/.codeforge/seat.json`（不是云计费）。
 
 ```bash
-./codeforge login                 # 无席位则进入 trial，并打印状态
-./codeforge login status          # 只读
-./codeforge login trial           # (none) → trial
-./codeforge login activate        # trial → active
-./codeforge login suspend         # active → suspended
+./codeforge seat trial      # (none) → trial
+./codeforge seat activate   # trial → active
+./codeforge seat suspend    # active → suspended
+./codeforge seat status
 ```
 
-非法跳转（例如 trial→suspend、suspended→active）非 0 退出且不改账本。
+非法跳转（例如 trial→suspend、suspended→active）非 0 退出且不改账本。`suspended` 时 `test-gen` / `defect-blame` / `regress-suggest` 拒绝执行。首次跑垂直命令若还没有席位，会自动开 trial。
 
-`suspended` 时 `test-gen` / `defect-blame` / `regress-suggest` 拒绝执行。首次跑垂直命令若还没有席位，会自动开 trial。
+`login` 只提示凭据（含 DeepSeek Base URL 示例）；席位走 `seat`，不要用 `login trial`。
 
 ## Commands
 
-Binary: `codeforge`. 产品命令仍是这五条（加深行为，不是聊天 IDE）：
+| Command | Flags / subcommands | 作用 |
+|---|---|---|
+| `login` | — | 凭据提示（OpenAI 兼容网关） |
+| `init` | — | 打印配置路径（不写文件） |
+| `test-gen` | `--repo <path>` | 扫描仓库生产源码，产出有证据的测例 |
+| `defect-blame` | `--log <path>`（默认 `fixtures/failure-stack-zh.txt`） | 失败日志归因 + 复现步骤 |
+| `regress-suggest` | `--diff <path>`（默认 `fixtures/fake-pr.diff`） | P0/P1/P2 定向回归（禁止全量） |
+| `seat` | `trial` `activate` `suspend` `status` | 席位状态机 |
 
-| Command | M1 |
-|---|---|
-| `login` | 席位账本 + 凭据提示 |
-| `init` | 打印配置路径（不写文件） |
-| `test-gen` | 扫描模块，产出有证据的测例 |
-| `defect-blame` | 堆栈归因 + 复现步骤 |
-| `regress-suggest` | P0/P1/P2 定向回归（禁止全量） |
-
-诊断（非产品命令）：`provider ping`。
+诊断：`provider ping`。本产品是测试/QE 楔子，不是通用 IDE 或聊天。
 
 ### test-gen
 
 ```bash
-./codeforge test-gen --offline --module samples/go-saas-admin
-./codeforge test-gen --offline --module samples/java-saas-admin
+./codeforge test-gen --offline --repo samples/go-saas-admin
+./codeforge test-gen --offline --repo samples/java-saas-admin
 ```
 
-- **黄金路径**：对样例订单域扫描 `Refund`/`Get`，给出关闭订单退款拒绝 + 租户隔离用例（CF-W1-001）。
-- **失败路径**：空模块（无生产源码）**非 0 退出**，不编造测例。
+- **黄金路径**：关闭订单退款拒绝 + 租户隔离用例（CF-W1-001）。
+- **失败路径**：空仓库（无生产源码）**非 0 退出**，不编造测例。
 
 ### defect-blame
 
 ```bash
-./codeforge defect-blame --offline --stack fixtures/failure-stack-zh.txt
-./codeforge defect-blame --offline --stack fixtures/insufficient-stack.txt
+./codeforge defect-blame --offline
+./codeforge defect-blame --offline --log fixtures/failure-stack-zh.txt
+./codeforge defect-blame --offline --log fixtures/insufficient-stack.txt
 ```
 
-- **黄金路径**：定位 `OrderService.refund`，分类 `defect`，给出租户/订单复现步骤。
-- **失败路径**：无应用帧 / 空堆栈 → `insufficient`，**不编造**文件或责任人，非 0 退出。
+- **黄金路径**（默认 log）：定位 `OrderService.refund`，分类 `defect`，给出复现步骤。
+- **失败路径**：无应用帧 → `insufficient`，**不编造**责任人，非 0 退出。
 
 ### regress-suggest
 
 ```bash
+./codeforge regress-suggest --offline
 ./codeforge regress-suggest --offline --diff fixtures/fake-pr.diff
 ./codeforge regress-suggest --offline --diff fixtures/docs-only.diff
 ```
 
-- **黄金路径**：P0 退款冒烟、P1 租户核心、可选 P2；输出含 “full regression forbidden”。
+- **黄金路径**（默认 diff）：P0 退款冒烟、P1 租户核心；禁止 full regression / 全量回归。
 - **失败路径**：空 diff 非 0 退出；**纯文档**不升级为 P0/P1。
 
 ## Config
 
 合并顺序（后者覆盖前者）：
 
-1. Defaults（`base_url=https://api.openai.com/v1`，`model=gpt-4o-mini` — 可被网关覆盖）
+1. 代码内占位默认（可被网关覆盖）
 2. `~/.codeforge/config.yaml`
 3. 项目 `.codeforge.yaml`（从 cwd 向上查找）
 4. Env：`CODEFORGE_API_KEY`，`CODEFORGE_BASE_URL`，`CODEFORGE_MODEL`
-
-```yaml
-# ~/.codeforge/config.yaml — DeepSeek 兼容网关示例
-api_key: sk-...
-base_url: https://api.deepseek.com/v1
-model: deepseek-chat
-```
 
 不要把密钥提交进仓库。
 
 ## Samples and fixtures
 
-- `samples/java-saas-admin/` / `samples/go-saas-admin/` — SaaS 中后台订单骨架（已知缺陷 CF-W1-001）
-- `fixtures/failure-stack-zh.txt` — 中文业务失败堆栈
-- `fixtures/insufficient-stack.txt` — 证据不足（超时、无应用帧）
-- `fixtures/fake-pr.diff` — 假 PR：退款账本但漏状态/租户
-- `fixtures/docs-only.diff` — 纯文档变更（不得升级回归）
+- `samples/java-saas-admin/` / `samples/go-saas-admin/` — SaaS 中后台订单骨架（CF-W1-001）
+- `fixtures/failure-stack-zh.txt` — 默认 defect-blame log
+- `fixtures/insufficient-stack.txt` — 证据不足
+- `fixtures/fake-pr.diff` — 默认 regress-suggest diff
+- `fixtures/docs-only.diff` — 纯文档（不得升级回归）
 
 ## Scope
 
-CodeForge **只做**测例生成 / 缺陷归因 / 回归建议。做成通用 IDE、编码 Copilot 或聊天框视为未达立项。无 IDE 插件。
+CodeForge **只做**测例生成 / 缺陷归因 / 回归建议 + 席位账本。做成通用 IDE、编码 Copilot 或聊天框视为未达立项。无 IDE 插件。
 
 选型：[SELECTION.md](SELECTION.md)。

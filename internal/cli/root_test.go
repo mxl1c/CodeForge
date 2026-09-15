@@ -56,8 +56,11 @@ func TestLoginAndInitNotStubs(t *testing.T) {
 	if strings.Contains(out, "stub") {
 		t.Fatalf("login still stub: %q", out)
 	}
-	if !strings.Contains(out, "trial") {
-		t.Fatalf("want trial seat: %q", out)
+	if !strings.Contains(out, "https://api.deepseek.com/v1") {
+		t.Fatalf("login should document DeepSeek-compatible base URL: %q", out)
+	}
+	if !strings.Contains(out, "codeforge seat") {
+		t.Fatalf("login should point at seat command: %q", out)
 	}
 
 	out, err = execRoot(t, "init")
@@ -67,11 +70,14 @@ func TestLoginAndInitNotStubs(t *testing.T) {
 	if strings.Contains(out, "stub") {
 		t.Fatalf("init still stub: %q", out)
 	}
+	if !strings.Contains(out, "seat trial") {
+		t.Fatalf("init should mention seat contract: %q", out)
+	}
 }
 
 func TestSeatLifecycleCommands(t *testing.T) {
 	isolateHome(t)
-	out, err := execRoot(t, "login", "trial")
+	out, err := execRoot(t, "seat", "trial")
 	if err != nil {
 		t.Fatalf("trial: %v\n%s", err, out)
 	}
@@ -79,7 +85,7 @@ func TestSeatLifecycleCommands(t *testing.T) {
 		t.Fatalf("%s", out)
 	}
 
-	out, err = execRoot(t, "login", "activate")
+	out, err = execRoot(t, "seat", "activate")
 	if err != nil {
 		t.Fatalf("activate: %v\n%s", err, out)
 	}
@@ -87,7 +93,7 @@ func TestSeatLifecycleCommands(t *testing.T) {
 		t.Fatalf("%s", out)
 	}
 
-	out, err = execRoot(t, "login", "suspend")
+	out, err = execRoot(t, "seat", "suspend")
 	if err != nil {
 		t.Fatalf("suspend: %v\n%s", err, out)
 	}
@@ -95,7 +101,7 @@ func TestSeatLifecycleCommands(t *testing.T) {
 		t.Fatalf("%s", out)
 	}
 
-	out, err = execRoot(t, "login", "status")
+	out, err = execRoot(t, "seat", "status")
 	if err != nil {
 		t.Fatalf("status: %v\n%s", err, out)
 	}
@@ -103,16 +109,21 @@ func TestSeatLifecycleCommands(t *testing.T) {
 		t.Fatalf("%s", out)
 	}
 
-	_, err = execRoot(t, "login", "activate")
+	_, err = execRoot(t, "seat", "activate")
 	if !errors.Is(err, seat.ErrInvalidTransition) {
 		t.Fatalf("suspended→active: %v", err)
+	}
+
+	_, err = execRoot(t, "login", "trial")
+	if err == nil {
+		t.Fatal("login must not own seat subcommands")
 	}
 }
 
 func TestTestGenGoldenAndEmpty(t *testing.T) {
 	isolateHome(t)
 	mod := filepath.Join(repoRoot(t), "samples", "go-saas-admin")
-	out, err := execRoot(t, "test-gen", "--offline", "--module", mod)
+	out, err := execRoot(t, "test-gen", "--offline", "--repo", mod)
 	if err != nil {
 		t.Fatalf("golden: %v\n%s", err, out)
 	}
@@ -124,7 +135,7 @@ func TestTestGenGoldenAndEmpty(t *testing.T) {
 	}
 
 	empty := t.TempDir()
-	out, err = execRoot(t, "test-gen", "--offline", "--module", empty)
+	out, err = execRoot(t, "test-gen", "--offline", "--repo", empty)
 	if !errors.Is(err, testgen.ErrEmptyModule) {
 		t.Fatalf("empty: err=%v out=%s", err, out)
 	}
@@ -136,7 +147,7 @@ func TestTestGenGoldenAndEmpty(t *testing.T) {
 func TestTestGenJavaGolden(t *testing.T) {
 	isolateHome(t)
 	mod := filepath.Join(repoRoot(t), "samples", "java-saas-admin")
-	out, err := execRoot(t, "test-gen", "--offline", "--module", mod)
+	out, err := execRoot(t, "test-gen", "--offline", "--repo", mod)
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
@@ -148,7 +159,7 @@ func TestTestGenJavaGolden(t *testing.T) {
 func TestDefectBlameGoldenAndInsufficient(t *testing.T) {
 	isolateHome(t)
 	stack := filepath.Join(repoRoot(t), "fixtures", "failure-stack-zh.txt")
-	out, err := execRoot(t, "defect-blame", "--offline", "--stack", stack)
+	out, err := execRoot(t, "defect-blame", "--offline", "--log", stack)
 	if err != nil {
 		t.Fatalf("golden: %v\n%s", err, out)
 	}
@@ -163,7 +174,7 @@ func TestDefectBlameGoldenAndInsufficient(t *testing.T) {
 	}
 
 	bad := filepath.Join(repoRoot(t), "fixtures", "insufficient-stack.txt")
-	out, err = execRoot(t, "defect-blame", "--offline", "--stack", bad)
+	out, err = execRoot(t, "defect-blame", "--offline", "--log", bad)
 	if err == nil {
 		t.Fatalf("insufficient should fail: %s", out)
 	}
@@ -221,17 +232,17 @@ func TestRegressSuggestGoldenAndDocsOnly(t *testing.T) {
 
 func TestSuspendedBlocksVerticalCommands(t *testing.T) {
 	isolateHome(t)
-	if _, err := execRoot(t, "login", "trial"); err != nil {
+	if _, err := execRoot(t, "seat", "trial"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := execRoot(t, "login", "activate"); err != nil {
+	if _, err := execRoot(t, "seat", "activate"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := execRoot(t, "login", "suspend"); err != nil {
+	if _, err := execRoot(t, "seat", "suspend"); err != nil {
 		t.Fatal(err)
 	}
 	mod := filepath.Join(repoRoot(t), "samples", "go-saas-admin")
-	_, err := execRoot(t, "test-gen", "--offline", "--module", mod)
+	_, err := execRoot(t, "test-gen", "--offline", "--repo", mod)
 	if !errors.Is(err, seat.ErrSuspended) {
 		t.Fatalf("want ErrSuspended, got %v", err)
 	}
@@ -324,10 +335,10 @@ func TestOfflineVerticalDoesNotCallComplete(t *testing.T) {
 	if _, err := execRoot(t, "login"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := execRoot(t, "test-gen", "--offline", "--module", mod); err != nil {
+	if _, err := execRoot(t, "test-gen", "--offline", "--repo", mod); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := execRoot(t, "defect-blame", "--offline", "--stack", stack); err != nil {
+	if _, err := execRoot(t, "defect-blame", "--offline", "--log", stack); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := execRoot(t, "regress-suggest", "--offline", "--diff", diff); err != nil {
@@ -354,7 +365,7 @@ func TestTestGenCallsProviderWhenKeyPresent(t *testing.T) {
 	t.Setenv("CODEFORGE_BASE_URL", srv.URL)
 
 	mod := filepath.Join(repoRoot(t), "samples", "go-saas-admin")
-	out, err := execRoot(t, "test-gen", "--module", mod)
+	out, err := execRoot(t, "test-gen", "--repo", mod)
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
@@ -369,12 +380,103 @@ func TestTestGenCallsProviderWhenKeyPresent(t *testing.T) {
 func TestMissingFlagsFail(t *testing.T) {
 	isolateHome(t)
 	if _, err := execRoot(t, "test-gen", "--offline"); err == nil {
-		t.Fatal("test-gen without module")
+		t.Fatal("test-gen without --repo must fail")
 	}
-	if _, err := execRoot(t, "defect-blame", "--offline"); err == nil {
-		t.Fatal("defect-blame without stack")
+}
+
+func TestLockedCLIContracts(t *testing.T) {
+	isolateHome(t)
+	root := NewRoot()
+
+	names := map[string]bool{}
+	for _, c := range root.Commands() {
+		names[c.Name()] = true
 	}
-	if _, err := execRoot(t, "regress-suggest", "--offline"); err == nil {
-		t.Fatal("regress-suggest without diff")
+	for _, want := range []string{"login", "init", "test-gen", "defect-blame", "regress-suggest", "seat"} {
+		if !names[want] {
+			t.Fatalf("missing command %s", want)
+		}
+	}
+
+	tg, _, err := root.Find([]string{"test-gen"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tg.Flags().Lookup("repo") == nil {
+		t.Fatal("test-gen must expose --repo")
+	}
+	if tg.Flags().Lookup("module") != nil {
+		t.Fatal("do not invent --module; locked flag is --repo")
+	}
+
+	db, _, err := root.Find([]string{"defect-blame"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	logFlag := db.Flags().Lookup("log")
+	if logFlag == nil {
+		t.Fatal("defect-blame must expose --log")
+	}
+	if logFlag.DefValue != defaultLogPath {
+		t.Fatalf("default --log=%q want %q", logFlag.DefValue, defaultLogPath)
+	}
+	if db.Flags().Lookup("stack") != nil {
+		t.Fatal("do not invent --stack; locked flag is --log")
+	}
+
+	rs, _, err := root.Find([]string{"regress-suggest"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	diffFlag := rs.Flags().Lookup("diff")
+	if diffFlag == nil {
+		t.Fatal("regress-suggest must expose --diff")
+	}
+	if diffFlag.DefValue != defaultDiffPath {
+		t.Fatalf("default --diff=%q want %q", diffFlag.DefValue, defaultDiffPath)
+	}
+
+	seatCmd, _, err := root.Find([]string{"seat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	subs := map[string]bool{}
+	for _, c := range seatCmd.Commands() {
+		subs[c.Name()] = true
+	}
+	for _, want := range []string{"trial", "activate", "suspend", "status"} {
+		if !subs[want] {
+			t.Fatalf("seat missing %s", want)
+		}
+	}
+
+	out, err := execRoot(t, "test-gen", "--offline", "--module", t.TempDir())
+	if err == nil {
+		t.Fatalf("unknown --module must fail, out=%s", out)
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repoRoot(t)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+
+	out, err = execRoot(t, "defect-blame", "--offline")
+	if err != nil {
+		t.Fatalf("default --log: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "classification: defect") {
+		t.Fatalf("default log golden: %s", out)
+	}
+
+	out, err = execRoot(t, "regress-suggest", "--offline")
+	if err != nil {
+		t.Fatalf("default --diff: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "P0") {
+		t.Fatalf("default diff golden: %s", out)
 	}
 }

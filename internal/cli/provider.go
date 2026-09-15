@@ -15,7 +15,8 @@ func newProviderCmd() *cobra.Command {
 		Short: "Provider diagnostics (W1-05 smoke; not a product command)",
 		Long: `Diagnostic commands for the OpenAI-compatible provider.
 
-This is not one of the five product commands (login, init, test-gen, defect-blame, regress-suggest).
+This is a diagnostic, not a QE vertical. Product/lifecycle commands:
+login, init, test-gen, defect-blame, regress-suggest, seat.
 W1-05 uses "provider ping" to make a single real Chat Completions Complete call.`,
 		SilenceUsage: true,
 	}

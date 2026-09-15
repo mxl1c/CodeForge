@@ -22,6 +22,7 @@ It is not a general-purpose IDE or chat interface.`,
 		newTestGenCmd(),
 		newDefectBlameCmd(),
 		newRegressSuggestCmd(),
+		newSeatCmd(),
 		newProviderCmd(),
 	)
 	return cmd

@@ -17,8 +17,8 @@ import (
 )
 
 var (
-	ErrEmptyModule = errors.New("empty module: no production source; refusing to fabricate tests")
-	ErrNoModule    = errors.New("module path is required")
+	ErrEmptyModule = errors.New("empty repo: no production source; refusing to fabricate tests")
+	ErrNoModule    = errors.New("repo path is required (--repo)")
 )
 
 type Case struct {
